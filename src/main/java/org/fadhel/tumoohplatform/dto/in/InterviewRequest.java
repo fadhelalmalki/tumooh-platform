@@ -20,8 +20,7 @@ public class InterviewRequest {
     @NotNull(message = "Interview date and time are required")
     private LocalDateTime interviewDate;
 
-    @Pattern(
-        regexp = "^(PENDING|SCHEDULED|COMPLETED|CANCELLED|RESCHEDULED)$",
+    @Pattern(regexp = "^(PENDING|SCHEDULED|COMPLETED|CANCELLED|RESCHEDULED)$",
         message = "Status must be one of: PENDING, SCHEDULED, COMPLETED, CANCELLED, RESCHEDULED"
     )
     private String status;

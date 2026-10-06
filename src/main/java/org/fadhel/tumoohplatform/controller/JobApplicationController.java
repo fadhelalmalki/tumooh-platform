@@ -21,8 +21,7 @@ public class JobApplicationController {
     }
 
     @PostMapping("/add/{userId}/{jobId}")
-    public ResponseEntity<?> addJobApplication(@PathVariable Long userId, @PathVariable Long jobId,
-                                               @RequestBody @Valid JobApplication jobApplication) {
+    public ResponseEntity<?> addJobApplication(@PathVariable Long userId, @PathVariable Long jobId, @RequestBody @Valid JobApplication jobApplication) {
         jobApplicationService.addJobApplication(userId, jobId, jobApplication);
         return ResponseEntity.status(200).body(new ApiResponse("Job application added"));
     }
