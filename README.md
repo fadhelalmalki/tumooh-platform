@@ -483,3 +483,41 @@ Produces a runnable JAR at `target/tumooh-platform-0.0.1-SNAPSHOT.jar`:
 ```bash
 java -jar target/tumooh-platform-0.0.1-SNAPSHOT.jar
 ```
+
+## My Contribution
+
+> Team project — I served as **Team Lead**, overseeing the team while contributing the features listed below.
+
+### Domain Classes (full CRUD)
+
+- **Admin** — admin management endpoints with admin-guarded authorization
+- **Profile** — profile endpoints incl. CV & image uploads
+- **Reminder** — reminder CRUD linked to job applications
+
+### Integrations
+
+- **Google Gemini API** — integration powering all AI features (`gemini-3.5-flash-lite`)
+
+### Features Delivered (endpoints)
+
+- [x] Interview preparation endpoint
+- [x] CV addition (upload) endpoint
+- [x] CV revision endpoint
+- [x] Cover letter generator endpoint
+- [x] Skill gap analysis endpoint
+- [x] Salary benchmark insight endpoint
+- [x] LinkedIn headline & About generator endpoint
+- [x] Career pivot feasibility endpoint
+- [x] Company culture brief endpoint
+- [x] STAR-answer endpoint
+- [x] Upload profile image endpoint
+
+### Web Pages (Thymeleaf)
+
+- Profile page — `/profile`
+- All 9 AI tools pages — `/ai-tools/cover-letter`, `/ai-tools/cv-revise`, `/ai-tools/skill-gap`, `/ai-tools/salary-benchmark`, `/ai-tools/star-answer`, `/ai-tools/interview-prep`, `/ai-tools/linkedin`, `/ai-tools/career-pivot`, `/ai-tools/company-brief`
+
+### Documentation
+
+- Main README file (this document)
+
