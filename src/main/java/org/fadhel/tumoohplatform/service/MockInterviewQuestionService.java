@@ -21,6 +21,7 @@ import java.util.Map;
 public class MockInterviewQuestionService {
 
     private static final String CATALOG_PATH = "data/mock-interview-questions.json";
+    private static final int QUESTIONS_PER_SESSION = 1;
 
     private final ObjectMapper objectMapper;
 
@@ -45,22 +46,22 @@ public class MockInterviewQuestionService {
         String normalized = normalize(trimmed);
 
         List<String> exact = catalog.get(normalized);
-        if (exact != null && exact.size() >= 3) {
-            return List.copyOf(exact.subList(0, 3));
+        if (exact != null && !exact.isEmpty()) {
+            return List.copyOf(exact.subList(0, Math.min(QUESTIONS_PER_SESSION, exact.size())));
         }
 
         List<String> fuzzy = findFuzzyMatch(normalized);
-        if (fuzzy != null && fuzzy.size() >= 3) {
-            return List.copyOf(fuzzy.subList(0, 3));
+        if (fuzzy != null && !fuzzy.isEmpty()) {
+            return List.copyOf(fuzzy.subList(0, Math.min(QUESTIONS_PER_SESSION, fuzzy.size())));
         }
 
         List<String> templates = catalog.get("_default");
-        if (templates == null || templates.size() < 3) {
+        if (templates == null || templates.isEmpty()) {
             throw new ApiException("No interview questions are defined for this job title.");
         }
 
-        List<String> formatted = new ArrayList<>(3);
-        for (int i = 0; i < 3; i++) {
+        List<String> formatted = new ArrayList<>(QUESTIONS_PER_SESSION);
+        for (int i = 0; i < QUESTIONS_PER_SESSION && i < templates.size(); i++) {
             formatted.add(String.format(templates.get(i), trimmed));
         }
         return formatted;
@@ -75,7 +76,7 @@ public class MockInterviewQuestionService {
             }
             String key = entry.getKey();
             if (normalizedTitle.contains(key) || key.contains(normalizedTitle)) {
-                if (key.length() > bestLen && entry.getValue() != null && entry.getValue().size() >= 3) {
+                if (key.length() > bestLen && entry.getValue() != null && !entry.getValue().isEmpty()) {
                     best = entry.getValue();
                     bestLen = key.length();
                 }
