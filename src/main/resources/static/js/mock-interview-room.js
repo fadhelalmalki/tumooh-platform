@@ -8,6 +8,7 @@
     const videoEl = document.getElementById('webcam');
     const fallbackEl = document.getElementById('camera-fallback');
     const submittingOverlay = document.getElementById('submitting-overlay');
+    const liveTranscriptEl = document.getElementById('live-transcript');
 
     let remaining = duration;
     let mediaStream = null;
@@ -21,6 +22,9 @@
     let speechActiveSeconds = 0;
     let peakAudioLevel = 0;
     let transcriptParts = [];
+    let pendingInterimTranscript = '';
+    let speechRecognition = null;
+    let speechApiAvailable = false;
 
     const SPEECH_LEVEL_THRESHOLD = 0.06;
     const SAMPLE_MS = 200;
@@ -45,6 +49,7 @@
     }
 
     function showCameraRequired(message) {
+        sessionReady = false;
         if (fallbackEl) {
             fallbackEl.textContent = message;
             fallbackEl.classList.remove('hidden');
@@ -59,7 +64,7 @@
 
     function isVideoLive(stream) {
         const track = stream.getVideoTracks()[0];
-        return track && track.readyState === 'live' && track.enabled;
+        return track && track.readyState === 'live' && track.enabled && !track.muted;
     }
 
     function isAudioLive(stream) {
@@ -77,8 +82,28 @@
         }).filter(Boolean);
     }
 
+    function currentTranscriptText() {
+        return (transcriptParts.join(' ') + ' ' + pendingInterimTranscript).trim();
+    }
+
+    function updateLiveTranscriptView() {
+        if (!liveTranscriptEl) {
+            return;
+        }
+        const text = currentTranscriptText();
+        if (text) {
+            liveTranscriptEl.textContent = text;
+            liveTranscriptEl.classList.remove('italic', 'text-white/60');
+            liveTranscriptEl.classList.add('text-white/90');
+        } else if (speechApiAvailable) {
+            liveTranscriptEl.textContent = 'Listening… speak clearly in English.';
+        } else {
+            liveTranscriptEl.textContent = 'Speech captions unavailable — check mic permissions.';
+        }
+    }
+
     function buildSessionNotes() {
-        const transcript = transcriptParts.join(' ').trim();
+        const transcript = currentTranscriptText();
         const spoke = speechActiveSeconds >= 1.5;
         const questions = getQuestionsFromDom();
         const questionsBlock = questions.map(function (q, i) {
@@ -90,7 +115,8 @@
 
         const header = [
             'CAMERA_ACTIVE:' + (cameraActive ? 'true' : 'false'),
-            'MICROPHONE_ACTIVE:' + (microphoneActive ? 'true' : 'false')
+            'MICROPHONE_ACTIVE:' + (microphoneActive ? 'true' : 'false'),
+            'SPEECH_TO_TEXT:' + (speechApiAvailable ? 'true' : 'false')
         ].join(' ');
 
         if (!spoke && !transcript) {
@@ -139,7 +165,6 @@
             }
         } catch (err) {
             redirectStarted = false;
-            showSubmittingOverlay(null);
             if (submittingOverlay) {
                 submittingOverlay.classList.add('hidden');
             }
@@ -192,30 +217,67 @@
         }, SAMPLE_MS);
     }
 
-    function startSpeechRecognition() {
-        const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
-        if (!SpeechRecognition) {
+    function restartSpeechRecognition() {
+        if (!speechRecognition || !sessionReady || redirectStarted) {
             return;
         }
         try {
-            const recognition = new SpeechRecognition();
-            recognition.continuous = true;
-            recognition.interimResults = true;
-            recognition.lang = 'en-US';
-            recognition.onresult = function (event) {
+            speechRecognition.start();
+        } catch (e) {
+            /* ignore restart race */
+        }
+    }
+
+    function startSpeechRecognition() {
+        const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+        if (!SpeechRecognition) {
+            speechApiAvailable = false;
+            updateLiveTranscriptView();
+            return;
+        }
+        try {
+            speechApiAvailable = true;
+            speechRecognition = new SpeechRecognition();
+            speechRecognition.continuous = true;
+            speechRecognition.interimResults = true;
+            speechRecognition.lang = 'en-US';
+            speechRecognition.onresult = function (event) {
+                pendingInterimTranscript = '';
                 for (let i = event.resultIndex; i < event.results.length; i++) {
+                    const piece = event.results[i][0].transcript;
                     if (event.results[i].isFinal) {
-                        transcriptParts.push(event.results[i][0].transcript);
+                        transcriptParts.push(piece);
+                    } else {
+                        pendingInterimTranscript += piece + ' ';
                     }
                 }
+                updateLiveTranscriptView();
             };
-            recognition.start();
+            speechRecognition.onend = function () {
+                restartSpeechRecognition();
+            };
+            speechRecognition.onerror = function () {
+                restartSpeechRecognition();
+            };
+            speechRecognition.start();
+            updateLiveTranscriptView();
         } catch (e) {
-            /* Web Speech API unavailable; mic levels still captured */
+            speechApiAvailable = false;
+            updateLiveTranscriptView();
         }
     }
 
     function stopMonitoring() {
+        if (speechRecognition) {
+            try {
+                speechRecognition.onend = null;
+                speechRecognition.onerror = null;
+                speechRecognition.stop();
+            } catch (e) {
+                /* ignore */
+            }
+            speechRecognition = null;
+        }
         if (timerInterval) {
             clearInterval(timerInterval);
             timerInterval = null;
@@ -234,19 +296,65 @@
         }
     }
 
+    function waitForVideoFrames() {
+        return new Promise(function (resolve, reject) {
+            if (!videoEl) {
+                reject(new Error('No video element'));
+                return;
+            }
+            const timeout = setTimeout(function () {
+                reject(new Error('Camera produced no video frames'));
+            }, 5000);
+
+            function check() {
+                if (videoEl.videoWidth > 0 && videoEl.videoHeight > 0) {
+                    clearTimeout(timeout);
+                    resolve();
+                }
+            }
+
+            videoEl.addEventListener('loadeddata', check);
+            videoEl.addEventListener('playing', check);
+            check();
+        });
+    }
+
     async function initCamera() {
         if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
-            showCameraRequired('Camera and microphone are required. Use a modern browser with HTTPS or localhost.');
+            showCameraRequired('Camera and microphone are required. Use Chrome on localhost or HTTPS.');
             return;
         }
 
         try {
-            mediaStream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
-            if (!isVideoLive(mediaStream) || !isAudioLive(mediaStream)) {
-                throw new Error('Tracks not live');
+            mediaStream = await navigator.mediaDevices.getUserMedia({
+                video: { facingMode: 'user' },
+                audio: true
+            });
+
+            if (!isAudioLive(mediaStream)) {
+                throw new Error('Microphone not available');
             }
-            videoEl.srcObject = mediaStream;
-            await videoEl.play();
+
+            const videoTrack = mediaStream.getVideoTracks()[0];
+            if (!videoTrack || videoTrack.readyState !== 'live') {
+                throw new Error('Camera not available');
+            }
+
+            if (fallbackEl) {
+                fallbackEl.classList.add('hidden');
+            }
+            if (videoEl) {
+                videoEl.classList.remove('hidden');
+                videoEl.srcObject = mediaStream;
+                await videoEl.play();
+            }
+
+            await waitForVideoFrames();
+
+            if (!isVideoLive(mediaStream)) {
+                throw new Error('Camera track muted or stopped');
+            }
+
             sessionReady = true;
             startAudioMonitoring(mediaStream);
             startSpeechRecognition();
@@ -254,8 +362,9 @@
         } catch (err) {
             stopMonitoring();
             showCameraRequired(
-                'Camera and microphone access is required for mock interviews. '
-                + 'Allow both permissions in your browser, then reload this page.'
+                'Camera and microphone are blocked or unavailable. In Chrome: click the '
+                + 'camera icon in the address bar → Allow camera & microphone for this site, '
+                + 'then reload. Also check macOS System Settings → Privacy → Camera/Microphone → Chrome.'
             );
         }
     }
